@@ -29,6 +29,12 @@ const dist  = (a, b)   => Math.hypot(a.x - b.x, a.y - b.y);
 const rand  = (min, max) => min + Math.random() * (max - min);
 const randInt = (min, max) => Math.floor(rand(min, max + 1));
 
+const SPEEDUP_DURATION = 5;
+const SPEEDUP_MULTIPLIER = 2;
+const POWERUP_DROP_CHANCE = 0.15;
+const POWERUP_TTL = 8;
+const SPEEDUP_COLOR = '#5ff7ff';
+
 // ── Bullet ────────────────────────────────────────────────────────────────────
 class Bullet {
   constructor(x, y, angle) {
@@ -132,31 +138,38 @@ class Ship {
     this.thrusting     = false;
     this.invincible    = 3;
     this.shootCooldown = 0;
+    this.speedupTimer  = 0;
     this.dead          = false;
+  }
+
+  isSpeedupActive() {
+    return this.speedupTimer > 0;
   }
 
   update(dt) {
     if (this.dead) return;
     if (this.invincible    > 0) this.invincible    -= dt;
     if (this.shootCooldown > 0) this.shootCooldown -= dt;
+    if (this.speedupTimer > 0) this.speedupTimer = Math.max(0, this.speedupTimer - dt);
 
     const ROT   = 3.5;   // rad/s
     const THRUST = 260;  // px/s²
     const DRAG   = 0.987;
+    const speedFactor = this.isSpeedupActive() ? SPEEDUP_MULTIPLIER : 1;
 
     if (keys['ArrowLeft'])  this.angle -= ROT * dt;
     if (keys['ArrowRight']) this.angle += ROT * dt;
 
     this.thrusting = !!keys['ArrowUp'];
     if (this.thrusting) {
-      this.vx += Math.cos(this.angle) * THRUST * dt;
-      this.vy += Math.sin(this.angle) * THRUST * dt;
+      this.vx += Math.cos(this.angle) * THRUST * dt * speedFactor;
+      this.vy += Math.sin(this.angle) * THRUST * dt * speedFactor;
     }
 
     this.vx *= DRAG;
     this.vy *= DRAG;
-    this.x = wrap(this.x + this.vx * dt, W);
-    this.y = wrap(this.y + this.vy * dt, H);
+    this.x = wrap(this.x + this.vx * dt * speedFactor, W);
+    this.y = wrap(this.y + this.vy * dt * speedFactor, H);
   }
 
   tryShoot() {
@@ -176,7 +189,12 @@ class Ship {
     ctx.save();
     ctx.translate(this.x, this.y);
     ctx.rotate(this.angle);
-    ctx.strokeStyle = '#fff';
+
+    const isSpeedupActive = this.isSpeedupActive();
+    const outlineColor = isSpeedupActive ? SPEEDUP_COLOR : '#fff';
+    const engineColor = isSpeedupActive ? 'rgba(95, 247, 255, 0.9)' : 'rgba(255, 130, 0, 0.85)';
+
+    ctx.strokeStyle = outlineColor;
     ctx.lineWidth   = 1.5;
     ctx.lineJoin    = 'round';
 
@@ -189,16 +207,69 @@ class Ship {
     ctx.closePath();
     ctx.stroke();
 
+    if (isSpeedupActive) {
+      ctx.beginPath();
+      ctx.arc(0, 0, 22, 0, Math.PI * 2);
+      ctx.strokeStyle = this.speedupTimer < 1.5 ? 'rgba(95, 247, 255, 0.9)' : 'rgba(95, 247, 255, 0.5)';
+      ctx.lineWidth = this.speedupTimer < 1.5 && Math.floor(this.speedupTimer * 8) % 2 === 0 ? 2.2 : 1.3;
+      ctx.stroke();
+    }
+
     // Llama del propulsor
     if (this.thrusting && Math.random() > 0.35) {
       ctx.beginPath();
       ctx.moveTo(-8, -4);
       ctx.lineTo(-8 - rand(6, 14), 0);
       ctx.lineTo(-8,  4);
-      ctx.strokeStyle = 'rgba(255, 130, 0, 0.85)';
+      ctx.strokeStyle = engineColor;
       ctx.stroke();
     }
 
+    ctx.restore();
+  }
+}
+
+class PowerUp {
+  constructor(x, y) {
+    this.x = x;
+    this.y = y;
+    this.radius = 10;
+    this.dead = false;
+    this.ttl = POWERUP_TTL;
+    this.pulse = rand(0, Math.PI * 2);
+  }
+
+  update(dt) {
+    this.ttl -= dt;
+    this.pulse += dt * 6;
+    this.x = wrap(this.x, W);
+    this.y = wrap(this.y, H);
+    if (this.ttl <= 0) this.dead = true;
+  }
+
+  draw() {
+    const alpha = this.ttl > 1 ? 1 : this.ttl;
+    ctx.save();
+    ctx.translate(this.x, this.y);
+    const s = 1 + Math.sin(this.pulse) * 0.15;
+    ctx.scale(s, s);
+    ctx.strokeStyle = `rgba(95, 247, 255, ${alpha})`;
+    ctx.fillStyle = `rgba(95, 247, 255, ${alpha * 0.18})`;
+    ctx.lineWidth = 1.8;
+    ctx.beginPath();
+    ctx.arc(0, 0, this.radius, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(-4, -7);
+    ctx.lineTo(4, -7);
+    ctx.lineTo(4, 0);
+    ctx.lineTo(-4, 0);
+    ctx.lineTo(-4, 7);
+    ctx.lineTo(4, 7);
+    ctx.stroke();
     ctx.restore();
   }
 }
@@ -236,7 +307,7 @@ class Particle {
 }
 
 // ── Estado del juego ──────────────────────────────────────────────────────────
-let ship, bullets, asteroids, particles;
+let ship, bullets, asteroids, particles, powerUps;
 let score, lives, level;
 let state;      // 'playing' | 'dead' | 'gameover'
 let deadTimer;
@@ -258,6 +329,7 @@ function initGame() {
   bullets   = [];
   asteroids = [];
   particles = [];
+  powerUps  = [];
   score  = 0;
   lives  = 3;
   level  = 1;
@@ -269,6 +341,7 @@ function nextLevel() {
   level++;
   bullets   = [];
   particles = [];
+  powerUps  = [];
   ship.reset();
   spawnAsteroids(3 + level);
 }
@@ -316,9 +389,11 @@ function update(dt) {
   bullets.forEach(b => b.update(dt));
   asteroids.forEach(a => a.update(dt));
   particles.forEach(p => p.update(dt));
+  powerUps.forEach(p => p.update(dt));
 
   bullets   = bullets.filter(b => !b.dead);
   particles = particles.filter(p => !p.dead);
+  powerUps  = powerUps.filter(p => !p.dead);
 
   // Bala vs asteroide
   const newAsteroids = [];
@@ -329,6 +404,9 @@ function update(dt) {
         a.dead = true;
         score += POINTS[a.size];
         explode(a.x, a.y, a.size * 5);
+        if (Math.random() < POWERUP_DROP_CHANCE) {
+          powerUps.push(new PowerUp(a.x, a.y));
+        }
         newAsteroids.push(...a.split());
       }
     }
@@ -343,6 +421,14 @@ function update(dt) {
         killShip();
         break;
       }
+    }
+  }
+
+  for (const p of powerUps) {
+    if (dist(ship, p) < ship.radius + p.radius) {
+      ship.speedupTimer = SPEEDUP_DURATION;
+      p.dead = true;
+      break;
     }
   }
 
@@ -378,6 +464,22 @@ function drawHUD() {
   ctx.textAlign = 'center';
   ctx.fillText(`NIVEL ${level}`, W / 2, 26);
 
+  if (ship.isSpeedupActive()) {
+    const barWidth = 120;
+    const progress = Math.max(0, ship.speedupTimer / SPEEDUP_DURATION);
+    const x = 14;
+    const y = 46;
+
+    ctx.textAlign = 'left';
+    ctx.fillStyle = SPEEDUP_COLOR;
+    ctx.fillText('SPEEDUP', x, y);
+
+    ctx.fillStyle = 'rgba(95, 247, 255, 0.18)';
+    ctx.fillRect(x, y + 6, barWidth, 8);
+    ctx.fillStyle = SPEEDUP_COLOR;
+    ctx.fillRect(x, y + 6, barWidth * progress, 8);
+  }
+
   for (let i = 0; i < lives; i++)
     drawLifeIcon(W - 16 - i * 22, 18);
 
@@ -399,6 +501,7 @@ function draw() {
 
   particles.forEach(p => p.draw());
   asteroids.forEach(a => a.draw());
+  powerUps.forEach(p => p.draw());
   bullets.forEach(b => b.draw());
   ship.draw();
 
