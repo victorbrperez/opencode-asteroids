@@ -30,6 +30,7 @@ Luego visita `http://localhost:3000`.
 | `↑`       | Propulsar  |
 | `Espacio` | Disparar   |
 | `A`       | Escudo (3 s activo, 10 s de recarga; destruye lo que toque) |
+| `S`       | Cambiar skin de la nave |
 
 ## Puntuación
 

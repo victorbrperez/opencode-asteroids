@@ -136,6 +136,46 @@ class Asteroid {
 }
 
 // ── Ship ──────────────────────────────────────────────────────────────────────
+// ── Skins ─────────────────────────────────────────────────────────────────────
+const SKIN_STORAGE_KEY = 'asteroids.skinIndex';
+const SHIP_SKINS = [
+  { name: 'CLASSIC', color: '#fff',    engineColor: 'rgba(255, 130, 0, 0.85)',
+    points: [[20, 0], [-12, -9], [-7, 0], [-12, 9]] },
+  { name: 'DART',    color: '#ffd24a', engineColor: 'rgba(255, 80, 40, 0.9)',
+    points: [[22, 0], [-12, -5], [-6, 0], [-12, 5]] },
+  { name: 'WING',    color: '#7dffb0', engineColor: 'rgba(80, 200, 255, 0.85)',
+    points: [[18, 0], [-6, -13], [-12, -8], [-7, 0], [-12, 8], [-6, 13]] },
+  { name: 'NEON',    color: '#ff4df0', engineColor: 'rgba(77, 255, 240, 0.9)',
+    points: [[20, 0], [2, -10], [-12, -9], [-8, 0], [-12, 9], [2, 10]] },
+];
+
+function loadSkinIndex() {
+  try {
+    const index = Number(localStorage.getItem(SKIN_STORAGE_KEY));
+    return Number.isInteger(index) && index >= 0 && index < SHIP_SKINS.length ? index : 0;
+  } catch {
+    return 0;
+  }
+}
+
+function saveSkinIndex(index) {
+  try { localStorage.setItem(SKIN_STORAGE_KEY, String(index)); } catch { /* storage no disponible */ }
+}
+
+let skinIndex = loadSkinIndex();
+const currentSkin = () => SHIP_SKINS[skinIndex];
+
+function cycleSkin() {
+  skinIndex = (skinIndex + 1) % SHIP_SKINS.length;
+  saveSkinIndex(skinIndex);
+}
+
+function traceShipPath(points) {
+  ctx.beginPath();
+  points.forEach(([x, y], i) => (i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y)));
+  ctx.closePath();
+}
+
 class Ship {
   constructor() { this.reset(); }
 
@@ -211,7 +251,7 @@ class Ship {
   tryShoot() {
     if (this.shootCooldown > 0 || this.dead) return [];
     this.shootCooldown = 0.2;
-    const NOSE = 21;
+    const NOSE = currentSkin().points[0][0] + 1;
     const ox = this.x + Math.cos(this.angle) * NOSE;
     const oy = this.y + Math.sin(this.angle) * NOSE;
     return [new Bullet(ox, oy, this.angle)];
@@ -227,20 +267,15 @@ class Ship {
     ctx.rotate(this.angle);
 
     const isSpeedupActive = this.isSpeedupActive();
-    const outlineColor = isSpeedupActive ? SPEEDUP_COLOR : '#fff';
-    const engineColor = isSpeedupActive ? 'rgba(95, 247, 255, 0.9)' : 'rgba(255, 130, 0, 0.85)';
+    const skin = currentSkin();
+    const outlineColor = isSpeedupActive ? SPEEDUP_COLOR : skin.color;
+    const engineColor = isSpeedupActive ? 'rgba(95, 247, 255, 0.9)' : skin.engineColor;
 
     ctx.strokeStyle = outlineColor;
     ctx.lineWidth   = 1.5;
     ctx.lineJoin    = 'round';
 
-    // Silueta clásica: triángulo con muesca trasera
-    ctx.beginPath();
-    ctx.moveTo( 20,  0);   // nariz
-    ctx.lineTo(-12, -9);   // ala izquierda
-    ctx.lineTo( -7,  0);   // muesca trasera
-    ctx.lineTo(-12,  9);   // ala derecha
-    ctx.closePath();
+    traceShipPath(skin.points);
     ctx.stroke();
 
     if (isSpeedupActive) {
@@ -500,6 +535,8 @@ function killShip() {
 
 // ── Update ────────────────────────────────────────────────────────────────────
 function update(dt) {
+  if (pressed('KeyS')) cycleSkin();
+
   if (state === 'gameover') {
     if (pressed('Space')) initGame();
     particles.forEach(p => p.update(dt));
@@ -617,15 +654,13 @@ function drawLifeIcon(x, y) {
   ctx.save();
   ctx.translate(x, y);
   ctx.rotate(-Math.PI / 2);
-  ctx.strokeStyle = '#fff';
-  ctx.lineWidth   = 1.2;
+  const skin = currentSkin();
+  const scale = 0.45;
+  ctx.scale(scale, scale);
+  ctx.strokeStyle = skin.color;
+  ctx.lineWidth   = 1.2 / scale;
   ctx.lineJoin    = 'round';
-  ctx.beginPath();
-  ctx.moveTo( 9,  0);
-  ctx.lineTo(-6, -5);
-  ctx.lineTo(-3,  0);
-  ctx.lineTo(-6,  5);
-  ctx.closePath();
+  traceShipPath(skin.points);
   ctx.stroke();
   ctx.restore();
 }
@@ -678,6 +713,11 @@ function drawHUD() {
 
   for (let i = 0; i < lives; i++)
     drawLifeIcon(W - 16 - i * 22, 18);
+
+  ctx.textAlign = 'right';
+  ctx.font = '12px monospace';
+  ctx.fillStyle = 'rgba(255,255,255,0.5)';
+  ctx.fillText(`[S] SKIN: ${currentSkin().name}`, W - 14, H - 12);
 
 }
 
