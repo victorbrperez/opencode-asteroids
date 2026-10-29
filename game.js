@@ -34,6 +34,9 @@ const SPEEDUP_MULTIPLIER = 2;
 const POWERUP_DROP_CHANCE = 0.15;
 const POWERUP_TTL = 8;
 const SPEEDUP_COLOR = '#5ff7ff';
+const TRIPLE_SHOT_DURATION = 5;
+const TRIPLE_SHOT_SPREAD = 8;
+const TRIPLE_SHOT_COLOR = '#ffb020';
 const SHOOTING_STAR_TTL = 4;
 const SHOOTING_STAR_SPEED = 400;
 const SHOOTING_STAR_SPAWN_INTERVAL = 15;
@@ -145,6 +148,7 @@ class Ship {
     this.invincible    = 3;
     this.shootCooldown = 0;
     this.speedupTimer  = 0;
+    this.tripleShotTimer = 0;
     this.dead          = false;
   }
 
@@ -152,11 +156,16 @@ class Ship {
     return this.speedupTimer > 0;
   }
 
+  isTripleShotActive() {
+    return this.tripleShotTimer > 0;
+  }
+
   update(dt) {
     if (this.dead) return;
     if (this.invincible    > 0) this.invincible    -= dt;
     if (this.shootCooldown > 0) this.shootCooldown -= dt;
     if (this.speedupTimer > 0) this.speedupTimer = Math.max(0, this.speedupTimer - dt);
+    if (this.tripleShotTimer > 0) this.tripleShotTimer = Math.max(0, this.tripleShotTimer - dt);
 
     const ROT   = 3.5;   // rad/s
     const THRUST = 260;  // px/s²
@@ -184,7 +193,13 @@ class Ship {
     const NOSE = 21;
     const ox = this.x + Math.cos(this.angle) * NOSE;
     const oy = this.y + Math.sin(this.angle) * NOSE;
-    return [new Bullet(ox, oy, this.angle)];
+    const offsets = this.isTripleShotActive() ? [-TRIPLE_SHOT_SPREAD, 0, TRIPLE_SHOT_SPREAD] : [0];
+    const perpendicular = this.angle + Math.PI / 2;
+    return offsets.map(offset => new Bullet(
+      ox + Math.cos(perpendicular) * offset,
+      oy + Math.sin(perpendicular) * offset,
+      this.angle
+    ));
   }
 
   draw() {
@@ -231,6 +246,14 @@ class Ship {
       ctx.stroke();
     }
 
+    if (this.isTripleShotActive()) {
+      ctx.beginPath();
+      ctx.arc(0, 0, 26, 0, Math.PI * 2);
+      ctx.strokeStyle = this.tripleShotTimer < 1.5 ? 'rgba(255, 176, 32, 0.9)' : 'rgba(255, 176, 32, 0.5)';
+      ctx.lineWidth = 1.3;
+      ctx.stroke();
+    }
+
     ctx.restore();
   }
 }
@@ -243,6 +266,7 @@ class PowerUp {
     this.dead = false;
     this.ttl = POWERUP_TTL;
     this.pulse = rand(0, Math.PI * 2);
+    this.type = Math.random() < 0.5 ? 'speedup' : 'tripleShot';
   }
 
   update(dt) {
@@ -259,8 +283,9 @@ class PowerUp {
     ctx.translate(this.x, this.y);
     const s = 1 + Math.sin(this.pulse) * 0.15;
     ctx.scale(s, s);
-    ctx.strokeStyle = `rgba(95, 247, 255, ${alpha})`;
-    ctx.fillStyle = `rgba(95, 247, 255, ${alpha * 0.18})`;
+    const rgb = this.type === 'tripleShot' ? '255, 176, 32' : '95, 247, 255';
+    ctx.strokeStyle = `rgba(${rgb}, ${alpha})`;
+    ctx.fillStyle = `rgba(${rgb}, ${alpha * 0.18})`;
     ctx.lineWidth = 1.8;
     ctx.beginPath();
     ctx.arc(0, 0, this.radius, 0, Math.PI * 2);
@@ -269,13 +294,20 @@ class PowerUp {
 
     ctx.lineWidth = 2;
     ctx.beginPath();
-    ctx.moveTo(-4, -7);
-    ctx.lineTo(4, -7);
-    ctx.lineTo(4, 0);
-    ctx.lineTo(-4, 0);
-    ctx.lineTo(-4, 7);
-    ctx.lineTo(4, 7);
-    ctx.stroke();
+    if (this.type === 'tripleShot') {
+      ctx.fillStyle = `rgba(${rgb}, ${alpha})`;
+      ctx.font = 'bold 14px monospace';
+      ctx.textAlign = 'center';
+      ctx.fillText('3', 0, 5);
+    } else {
+      ctx.moveTo(-4, -7);
+      ctx.lineTo(4, -7);
+      ctx.lineTo(4, 0);
+      ctx.lineTo(-4, 0);
+      ctx.lineTo(-4, 7);
+      ctx.lineTo(4, 7);
+      ctx.stroke();
+    }
     ctx.restore();
   }
 }
@@ -541,7 +573,8 @@ function update(dt) {
 
   for (const p of powerUps) {
     if (dist(ship, p) < ship.radius + p.radius) {
-      ship.speedupTimer = SPEEDUP_DURATION;
+      if (p.type === 'tripleShot') ship.tripleShotTimer = TRIPLE_SHOT_DURATION;
+      else ship.speedupTimer = SPEEDUP_DURATION;
       p.dead = true;
       break;
     }
@@ -569,6 +602,20 @@ function drawLifeIcon(x, y) {
   ctx.restore();
 }
 
+function drawTimerBar(label, progress, color, y) {
+  const barWidth = 120;
+  const x = 14;
+
+  ctx.textAlign = 'left';
+  ctx.fillStyle = color;
+  ctx.fillText(label, x, y);
+
+  ctx.globalAlpha = 0.18;
+  ctx.fillRect(x, y + 6, barWidth, 8);
+  ctx.globalAlpha = 1;
+  ctx.fillRect(x, y + 6, barWidth * Math.max(0, progress), 8);
+}
+
 function drawHUD() {
   ctx.fillStyle = '#fff';
   ctx.font = '15px monospace';
@@ -579,20 +626,13 @@ function drawHUD() {
   ctx.textAlign = 'center';
   ctx.fillText(`NIVEL ${level}`, W / 2, 26);
 
+  let barY = 46;
   if (ship.isSpeedupActive()) {
-    const barWidth = 120;
-    const progress = Math.max(0, ship.speedupTimer / SPEEDUP_DURATION);
-    const x = 14;
-    const y = 46;
-
-    ctx.textAlign = 'left';
-    ctx.fillStyle = SPEEDUP_COLOR;
-    ctx.fillText('SPEEDUP', x, y);
-
-    ctx.fillStyle = 'rgba(95, 247, 255, 0.18)';
-    ctx.fillRect(x, y + 6, barWidth, 8);
-    ctx.fillStyle = SPEEDUP_COLOR;
-    ctx.fillRect(x, y + 6, barWidth * progress, 8);
+    drawTimerBar('SPEEDUP', ship.speedupTimer / SPEEDUP_DURATION, SPEEDUP_COLOR, barY);
+    barY += 30;
+  }
+  if (ship.isTripleShotActive()) {
+    drawTimerBar('TRIPLE SHOT', ship.tripleShotTimer / TRIPLE_SHOT_DURATION, TRIPLE_SHOT_COLOR, barY);
   }
 
   for (let i = 0; i < lives; i++)
