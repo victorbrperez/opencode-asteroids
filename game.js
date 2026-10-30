@@ -142,14 +142,16 @@ class Asteroid {
 // ── Skins ─────────────────────────────────────────────────────────────────────
 const SKIN_STORAGE_KEY = 'asteroids.skinIndex';
 const SHIP_SKINS = [
-  { name: 'CLASSIC', color: '#fff',    engineColor: 'rgba(255, 130, 0, 0.85)',
+  { name: 'CLASSIC', color: '#fff',    engineColor: 'rgba(255, 130, 0, 0.85)', scale: 1, scoreMultiplier: 1,
     points: [[20, 0], [-12, -9], [-7, 0], [-12, 9]] },
-  { name: 'DART',    color: '#ffd24a', engineColor: 'rgba(255, 80, 40, 0.9)',
+  { name: 'DART',    color: '#ffd24a', engineColor: 'rgba(255, 80, 40, 0.9)', scale: 1, scoreMultiplier: 1,
     points: [[22, 0], [-12, -5], [-6, 0], [-12, 5]] },
-  { name: 'WING',    color: '#7dffb0', engineColor: 'rgba(80, 200, 255, 0.85)',
+  { name: 'WING',    color: '#7dffb0', engineColor: 'rgba(80, 200, 255, 0.85)', scale: 1, scoreMultiplier: 1,
     points: [[18, 0], [-6, -13], [-12, -8], [-7, 0], [-12, 8], [-6, 13]] },
-  { name: 'NEON',    color: '#ff4df0', engineColor: 'rgba(77, 255, 240, 0.9)',
+  { name: 'NEON',    color: '#ff4df0', engineColor: 'rgba(77, 255, 240, 0.9)', scale: 1, scoreMultiplier: 1,
     points: [[20, 0], [2, -10], [-12, -9], [-8, 0], [-12, 9], [2, 10]] },
+  { name: 'PURPLE',  color: '#b04cff', engineColor: 'rgba(176, 76, 255, 0.9)', scale: 2, scoreMultiplier: 2,
+    points: [[20, 0], [-12, -9], [-7, 0], [-12, 9]] },
 ];
 
 function loadSkinIndex() {
@@ -188,7 +190,6 @@ class Ship {
     this.angle  = -Math.PI / 2;
     this.vx     = 0;
     this.vy     = 0;
-    this.radius = 12;
     this.thrusting     = false;
     this.invincible    = 3;
     this.shootCooldown = 0;
@@ -197,6 +198,10 @@ class Ship {
     this.shieldCooldown = 0;
     this.tripleShotTimer = 0;
     this.dead          = false;
+  }
+
+  get radius() {
+    return 12 * currentSkin().scale;
   }
 
   isSpeedupActive() {
@@ -260,7 +265,8 @@ class Ship {
   tryShoot() {
     if (this.shootCooldown > 0 || this.dead) return [];
     this.shootCooldown = 0.2;
-    const NOSE = currentSkin().points[0][0] + 1;
+    const skin = currentSkin();
+    const NOSE = (skin.points[0][0] + 1) * skin.scale;
     const ox = this.x + Math.cos(this.angle) * NOSE;
     const oy = this.y + Math.sin(this.angle) * NOSE;
     const offsets = this.isTripleShotActive() ? [-TRIPLE_SHOT_SPREAD, 0, TRIPLE_SHOT_SPREAD] : [0];
@@ -283,6 +289,7 @@ class Ship {
 
     const isSpeedupActive = this.isSpeedupActive();
     const skin = currentSkin();
+    ctx.scale(skin.scale, skin.scale);
     const outlineColor = isSpeedupActive ? SPEEDUP_COLOR : skin.color;
     const engineColor = isSpeedupActive ? 'rgba(95, 247, 255, 0.9)' : skin.engineColor;
 
@@ -540,7 +547,7 @@ function explode(x, y, count = 8) {
 
 function destroyAsteroid(a) {
   a.dead = true;
-  score += POINTS[a.size];
+  score += POINTS[a.size] * currentSkin().scoreMultiplier;
   explode(a.x, a.y, a.size * 5);
   if (Math.random() < POWERUP_DROP_CHANCE) powerUps.push(new PowerUp(a.x, a.y));
   return a.split();
@@ -548,7 +555,7 @@ function destroyAsteroid(a) {
 
 function destroyShootingStar(s) {
   s.dead = true;
-  score += SHOOTING_STAR_POINTS;
+  score += SHOOTING_STAR_POINTS * currentSkin().scoreMultiplier;
   explode(s.x, s.y, 12);
   if (Math.random() < SHOOTING_STAR_DROP_CHANCE) powerUps.push(new PowerUp(s.x, s.y));
 }
@@ -688,7 +695,7 @@ function drawLifeIcon(x, y) {
   ctx.translate(x, y);
   ctx.rotate(-Math.PI / 2);
   const skin = currentSkin();
-  const scale = 0.45;
+  const scale = 0.45 * skin.scale;
   ctx.scale(scale, scale);
   ctx.strokeStyle = skin.color;
   ctx.lineWidth   = 1.2 / scale;

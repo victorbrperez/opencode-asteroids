@@ -32,6 +32,8 @@ Luego visita `http://localhost:3000`.
 | `A`       | Escudo (3 s activo, 10 s de recarga; destruye lo que toque) |
 | `S`       | Cambiar skin de la nave |
 
+La skin `PURPLE` es morada, tiene el doble de tamaño y duplica los puntos obtenidos.
+
 ## Puntuación
 
 | Asteroide | Puntos |
